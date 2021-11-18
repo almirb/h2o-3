@@ -175,8 +175,9 @@ public class ModelMetricsClustering extends ModelMetricsUnsupervised {
     private double[/*k*/][/*features*/] _centers_std_raw;
     private int[] _mode;
     private int _k;
-    
 
+    public IndependentMetricBuilderClustering() {}
+            
     public IndependentMetricBuilderClustering(
         int ncol,
         int k,
