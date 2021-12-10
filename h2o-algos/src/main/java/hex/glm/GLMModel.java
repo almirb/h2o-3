@@ -1250,8 +1250,6 @@ public class GLMModel extends Model<GLMModel,GLMModel.GLMParameters,GLMModel.GLM
     
     public double[] ymu() { return _ymu;}
 
-    public double[] ymu() { return _ymu;}
-
     public boolean isStandardized() {
       return _dinfo._predictor_transform == TransformType.STANDARDIZE;
     }
