@@ -91,8 +91,8 @@ publicFileName = 'nodes-public'
 privateFileName = 'nodes-private'
 
 if not dryRun:
-    fpublic = open(publicFileName, 'w')
-    fprivate = open(privateFileName, 'w')
+    fpublic = open(publicFileName, 'w', encoding='utf-8')
+    fprivate = open(privateFileName, 'w', encoding='utf-8')
 
 print 'Using boto version', boto.Version
 if True:
