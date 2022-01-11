@@ -11,7 +11,7 @@ def encofrce_utf8_encoding():
     all_rows = pd.read_csv(pyunit_utils.locate("smalldata/gbm_test/titanic.csv"))
     all_rows.at[0,0] = "�"
     try:
-        locale.setlocale(locale.LC_ALL, (None, 'ISO8859-1'))
+        locale.setlocale(locale.LC_ALL, 'en_US.ISO8859-1')
         # this reproduces the encoding error when certain codec can't encode certain character 
         h2o.H2OFrame(all_rows)
         locale.setlocale(locale.LC_ALL, orig_locale)
