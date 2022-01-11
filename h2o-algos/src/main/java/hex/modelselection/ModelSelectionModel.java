@@ -66,12 +66,15 @@ public class ModelSelectionModel extends Model<ModelSelectionModel, ModelSelecti
         public int _nfolds = 0; // disable cross-validation
         public Key<Frame> _plug_values = null;
         public int _max_predictor_number = 1;
+        public int _min_predictor_number = 1;
         public int _nparallelism = 0;
+        public double _p_values_threshold = 0;
         public Mode _mode = Mode.maxr;  // mode chosen to perform model selection
 
         public enum Mode {
             allsubsets, // use combinatorial, exponential runtime
-            maxr; // use sequential replacement
+            maxr, // use sequential replacement
+            backward // use backward selection
         }
         @Override
         public String algoName() {

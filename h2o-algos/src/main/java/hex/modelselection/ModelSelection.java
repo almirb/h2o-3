@@ -18,17 +18,14 @@ import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 import static hex.genmodel.utils.MathUtils.combinatorial;
-import static hex.glm.GLMModel.GLMParameters.Family.AUTO;
-import static hex.glm.GLMModel.GLMParameters.Family.gaussian;
-import static hex.modelselection.ModelSelectionModel.ModelSelectionParameters.Mode.allsubsets;
-import static hex.modelselection.ModelSelectionModel.ModelSelectionParameters.Mode.maxr;
+import static hex.glm.GLMModel.GLMParameters.Family.*;
+import static hex.modelselection.ModelSelectionModel.ModelSelectionParameters.Mode.*;
 import static hex.modelselection.ModelSelectionUtils.*;
 
 public class ModelSelection extends ModelBuilder<hex.modelselection.ModelSelectionModel, hex.modelselection.ModelSelectionModel.ModelSelectionParameters, hex.modelselection.ModelSelectionModel.ModelSelectionModelOutput> {
     public String[][] _bestModelPredictors; // store for each predictor number, the best model predictors
     public double[] _bestR2Values;  // store the best R2 values of the best models with fix number of predictors
     DataInfo _dinfo;
-    public int _numModelBuilt;      // number of models that are to be built
     public int _numPredictors;
     public String[] _predictorNames;
     public int _glmNFolds = 0;
@@ -100,29 +97,53 @@ public class ModelSelection extends ModelBuilder<hex.modelselection.ModelSelecti
     }
     
     private void initModelParameters() {
-        _numModelBuilt = calculateModelNumber(_numPredictors, _parms._max_predictor_number);
-        _bestR2Values = new double[_parms._max_predictor_number];
-        _bestModelPredictors = new String[_parms._max_predictor_number][];
+        if (!backward.equals(_parms._mode)) {
+            _bestR2Values = new double[_parms._max_predictor_number];
+            _bestModelPredictors = new String[_parms._max_predictor_number][];
+        }
     }
 
     private void initModelSelectionParameters() {
-        if (nclasses() > 1)
-            error("response", "ModelSelection only works with regression.");
-        
-        if (!(AUTO.equals(_parms._family) || gaussian.equals(_parms._family)))
-            error("_family", "ModelSelection only supports Gaussian family");
+        _predictorNames = extractPredictorNames(_parms, _dinfo, _foldColumn);
+        _numPredictors = _predictorNames.length;
+
+        if (maxr.equals(_parms._mode) || allsubsets.equals(_parms._mode)) { // check for maxr and allsubsets
+            if (nclasses() > 1)
+                error("response", "'allsubsets' and 'maxr' only works with regression.");
+            
+            if (!(AUTO.equals(_parms._family) || gaussian.equals(_parms._family)))
+                error("_family", "ModelSelection only supports Gaussian family");
+
+            if (_parms._max_predictor_number < 1 || _parms._max_predictor_number > _numPredictors)
+                error("max_predictor_number", "max_predictor_number must exceed 0 and be no greater" +
+                        " than the number of predictors of the training frame.");
+        } else {    // checks for backward selection only
+            _parms._compute_p_values = true;
+            if (_parms._lambda == null) 
+                _parms._lambda = new double[]{0};
+            if (_parms._lambda_search)
+                error("lambda_search", "backward selection does not support lambda_search.");
+            if (_parms._lambda != null) {
+                if (_parms._lambda.length > 1)
+                    error("lambda", "if set must be set to 0 and cannot be an array or more than" +
+                            " length one for backward selection.");
+                if (_parms._lambda[0] != 0)
+                    error("lambda", "must be set to 0 for backward selection");
+            }
+            if (multinomial.equals(_parms._family) || ordinal.equals(_parms._family))
+                error("family", "backward selection does not support multinomial or ordinal");
+            if (_parms._min_predictor_number <= 0) 
+                error("min_predictor_number", "must be >= 1.");
+            if (_parms._min_predictor_number > _numPredictors)
+                error("min_predictor_number", "cannot exceed the total number of predictors (" + 
+                        _numPredictors + ")in the dataset.");
+        }
         
         if (_parms._nparallelism < 0) 
             error("nparallelism", "must be >= 0.");
         
         if (_parms._nparallelism == 0)
             _parms._nparallelism = H2O.NUMCPUS;
-        
-        _predictorNames = extractPredictorNames(_parms, _dinfo, _foldColumn);
-        _numPredictors = _predictorNames.length;
-        if (_parms._max_predictor_number < 1 || _parms._max_predictor_number > _numPredictors)
-            error("max_predictor_number", "max_predictor_number must exceed 0 and be no greater" +
-                    " than the number of predictors of the training frame.");
     }
     
     public class ModelSelectionDriver extends Driver {
@@ -140,6 +161,8 @@ public class ModelSelection extends ModelBuilder<hex.modelselection.ModelSelecti
                     buildAllSubsetsModels(model);
                 else if (maxr.equals(_parms._mode))
                     buildMaxRModels(model);
+                else if (backward.equals(_parms._mode))
+                    buildBackwardModels(model);
                 _job.update(0, "Completed GLM model building.  Extracting results now.");
                 model.update(_job);
                 // copy best R2 and best predictors to model._output
@@ -188,7 +211,22 @@ public class ModelSelection extends ModelBuilder<hex.modelselection.ModelSelecti
             }
         }
 
-
+        private void buildBackwardModels(ModelSelectionModel model) {
+            List<String> coefNames = new ArrayList<>(Arrays.asList(_predictorNames));
+            List<Integer> coefIndice = IntStream.rangeClosed(0, coefNames.size()-1).boxed().collect(Collectors.toList());
+            int numModelsBuilt = 0;
+            for (int predNum = _parms._max_predictor_number; predNum >= 1; predNum--) {
+                String[] coefName = coefNames.toArray(new String[0]);
+                int[] coefInd = coefIndice.stream().mapToInt(Integer::intValue).toArray();
+                Frame trainingFrame = generateOneFrame(coefInd, _parms, coefName, _foldColumn);
+                GLMModel.GLMParameters[] glmParam = generateGLMParameters(new Frame[]{trainingFrame}, _parms, 
+                        _glmNFolds, _foldColumn, _foldAssignment);
+                GLMModel glmModel = new GLM(glmParam[0]).trainModel().get();
+                DKV.put(glmModel);  // track model
+                numModelsBuilt++;
+                // evaluate which variable to drop for next round of testing and store corresponding values
+            }
+        }
         
         /***
          * Find the subset of predictors of sizes 1, 2, ..., _parm._max_predictor_number that generate the

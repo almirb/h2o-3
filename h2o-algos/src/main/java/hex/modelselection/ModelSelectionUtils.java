@@ -19,29 +19,6 @@ import java.util.stream.IntStream;
 import static hex.genmodel.utils.MathUtils.combinatorial;
 
 public class ModelSelectionUtils {
-    /**
-     * Given the number of predictors in the training frame and the maximum predictor number, we are going to calculate
-     * the number of models that we need to build in order to find:
-     * - best model with 1 predictor;
-     * - best model with 2 predictors;
-     * ...
-     * - best model with naxPredictorNumber.
-     * 
-     * This basically boils down to calculating the following:
-     * combination(numPredictors, 1) + combination(numPredictors, 2) + ... + combination(numPredictors, maxPredictorNumber)
-     * 
-     * @param numPredictors: number of predictors in the training frame
-     * @param maxPredictorNumber: maximum number of predictors of interest
-     * @return an integer that is the number of models that are going to be built
-     */
-    public static int calculateModelNumber(int numPredictors, int maxPredictorNumber) {
-        int modelNumber = 0;
-        for (int index = 1; index <= maxPredictorNumber; index++) {
-            modelNumber += combinatorial(numPredictors, index);
-        }
-        return modelNumber;
-    }
-    
     public static Frame[] generateTrainingFrames(ModelSelectionModel.ModelSelectionParameters parms, int predNum, String[] predNames,
                                                  int numModels, String foldColumn) {
         int maxPredNum = predNames.length;
