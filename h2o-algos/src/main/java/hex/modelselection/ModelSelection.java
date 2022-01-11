@@ -77,17 +77,21 @@ public class ModelSelection extends ModelBuilder<hex.modelselection.ModelSelecti
     }
     
     public void init(boolean expensive) {
-        if (_parms._nfolds > 0 || _parms._fold_column != null) {
-            _glmNFolds = _parms._nfolds;
-            if (_parms._fold_assignment != null) {
-                _foldAssignment = _parms._fold_assignment;
-                _parms._fold_assignment = null;
+        if (_parms._nfolds > 0 || _parms._fold_column != null) {    // cv enabled
+            if (backward.equals(_parms._mode)) {
+                error("nfolds/fold_column", "cross-validation is not supported for backward selection.");
+            } else {
+                _glmNFolds = _parms._nfolds;
+                if (_parms._fold_assignment != null) {
+                    _foldAssignment = _parms._fold_assignment;
+                    _parms._fold_assignment = null;
+                }
+                if (_parms._fold_column != null) {
+                    _foldColumn = _parms._fold_column;
+                    _parms._fold_column = null;
+                }
+                _parms._nfolds = 0;
             }
-            if (_parms._fold_column != null) {
-                _foldColumn = _parms._fold_column;
-                _parms._fold_column = null;
-            }
-            _parms._nfolds = 0;
         }
         super.init(expensive);
         if (expensive) {
@@ -153,7 +157,13 @@ public class ModelSelection extends ModelBuilder<hex.modelselection.ModelSelecti
                 model = new hex.modelselection.ModelSelectionModel(dest(), _parms, new hex.modelselection.ModelSelectionModel.ModelSelectionModelOutput(ModelSelection.this, _dinfo));
                 model.write_lock(_job);
                 model._output._best_model_ids = new Key[_parms._max_predictor_number];
-                model._output._best_r2_values = new double[_parms._max_predictor_number];
+                if (backward.equals(_parms._mode)) {
+                    int numModels = _numPredictors-_parms._min_predictor_number;
+                    model._output._coef_p_values = new double[numModels][];
+                    model._output._z_values = new double[numModels][];
+                } else {
+                    model._output._best_r2_values = new double[_parms._max_predictor_number];
+                }
                 model._output._best_model_predictors = new String[_parms._max_predictor_number][];
                 model._output._coefficient_names = new String[_parms._max_predictor_number][];
                 // build glm model with num_predictors and find one with best R2
@@ -219,12 +229,16 @@ public class ModelSelection extends ModelBuilder<hex.modelselection.ModelSelecti
                 String[] coefName = coefNames.toArray(new String[0]);
                 int[] coefInd = coefIndice.stream().mapToInt(Integer::intValue).toArray();
                 Frame trainingFrame = generateOneFrame(coefInd, _parms, coefName, _foldColumn);
+                DKV.put(trainingFrame);
                 GLMModel.GLMParameters[] glmParam = generateGLMParameters(new Frame[]{trainingFrame}, _parms, 
                         _glmNFolds, _foldColumn, _foldAssignment);
                 GLMModel glmModel = new GLM(glmParam[0]).trainModel().get();
                 DKV.put(glmModel);  // track model
                 numModelsBuilt++;
                 // evaluate which variable to drop for next round of testing and store corresponding values
+                // if p_values_threshold is specified, model building may stop
+                model._output.extractPred4NextModel(glmModel, predNum, coefNames, coefIndice);
+                
             }
         }
         

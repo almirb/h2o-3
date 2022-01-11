@@ -14,6 +14,7 @@ import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.stream.Stream;
 
 public class ModelSelectionModel extends Model<ModelSelectionModel, ModelSelectionModel.ModelSelectionParameters,
@@ -135,6 +136,8 @@ public class ModelSelectionModel extends Model<ModelSelectionModel, ModelSelecti
         double[] _best_r2_values;  // store the best R2 values of the best models with fix number of predictors
         public Key[] _best_model_ids;
         String[][] _coefficient_names;
+        double[][] _coef_p_values;
+        double[][] _z_values;
         
         public ModelSelectionModelOutput(hex.modelselection.ModelSelection b, DataInfo dinfo) {
             super(b, dinfo._adaptedFrame);
@@ -218,10 +221,22 @@ public class ModelSelectionModel extends Model<ModelSelectionModel, ModelSelecti
             } else {
                 _best_r2_values[index] = bestModel.r2();
             }
-            _coefficient_names[index] = bestModel._output.coefficientNames().clone();
-            ArrayList<String> coeffNames = new ArrayList<>(Arrays.asList(bestModel._output.coefficientNames()));
+            extractCoeffs(bestModel, index);
+        }
+        
+        void extractCoeffs(GLMModel model, int index) {
+            _coefficient_names[index] =model._output.coefficientNames().clone();
+            ArrayList<String> coeffNames = new ArrayList<>(Arrays.asList(model._output.coefficientNames()));
             coeffNames.remove(coeffNames.size()-1); // remove intercept as it is not a predictor
             _best_model_predictors[index] = coeffNames.toArray(new String[0]);
+        }
+        
+        void extractPred4NextModel(GLMModel model, int index, List<String> predNames, List<Integer> predIndices) {
+            extractCoeffs(model, index);
+            String[] predictors = _best_model_predictors[index];    // z-values, p-values use this list
+            double[] z_values = model._output.zValues();
+            double[] p_values = model._output.pValues();
+            
         }
     }
 
