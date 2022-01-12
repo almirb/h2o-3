@@ -122,7 +122,37 @@ public class ModelSelectionUtils {
         }
         return trainFramesList.stream().toArray(Frame[]::new);
     }
+    
+    public static <T> T[][] shrinkOneArray(T[][] array, int numModels) {
+        int arrLen = array.length;
+        T[][] newArray =(T[][]) new Object[numModels][];
+        for (int index=0; index < numModels; index++)
+            newArray[index] = array[arrLen-index].clone();
+        return newArray;
+    }
+    
+    public static double[][] shrinkDoubleArray(double[][] array, int numModels) {
+        int arrLen = array.length;
+        double[][] newArray =new double[numModels][];
+        for (int index=0; index < numModels; index++)
+            newArray[index] = array[arrLen-index].clone();
+        return newArray;
+    }
 
+    public static Key[] shrinkKeyArray(Key[] array, int numModels) {
+        int arrLen = array.length;
+        Key[] newArray = new Key[numModels];
+        System.arraycopy(array, (arrLen-numModels), newArray, 0, numModels);
+        return newArray;
+    }
+    
+    public static String joinDouble(double[] val) {
+        int arrLen = val.length-1; // skip the intercept terms
+        String[] strVal = new String[arrLen];
+        for (int index=1; index < arrLen; index++)
+            strVal[index] = Double.toString(val[index]);
+        return String.join(", ", strVal);
+    }
     /**
      * Given an array GLMModel built, find the one with the highest R2 value that exceeds lastBestR2.  If found, return
      * the index where the best model is.  Else return -1

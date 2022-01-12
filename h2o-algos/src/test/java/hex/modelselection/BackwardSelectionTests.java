@@ -33,11 +33,11 @@ public class BackwardSelectionTests extends TestUtil {
             ModelSelectionModel.ModelSelectionParameters parms = new ModelSelectionModel.ModelSelectionParameters();
             parms._response_column = "C21";
             parms._family = gaussian;
-            parms._min_predictor_number = 3;
             parms._train = trainF._key;
             parms._mode = backward;
             ModelSelectionModel modelAllSubsets = new hex.modelselection.ModelSelection(parms).trainModel().get();
             Scope.track_generic(modelAllSubsets);
+            
         } finally {
             Scope.exit();
         }

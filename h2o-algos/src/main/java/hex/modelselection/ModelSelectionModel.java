@@ -4,6 +4,7 @@ import hex.*;
 import hex.deeplearning.DeepLearningModel;
 import hex.glm.GLM;
 import hex.glm.GLMModel;
+import org.apache.commons.lang.ArrayUtils;
 import water.*;
 import water.fvec.Frame;
 import water.fvec.Vec;
@@ -11,11 +12,11 @@ import water.udf.CFuncRef;
 import water.util.TwoDimTable;
 
 import java.io.Serializable;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
+import java.util.*;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
+
+import static hex.modelselection.ModelSelectionUtils.*;
 
 public class ModelSelectionModel extends Model<ModelSelectionModel, ModelSelectionModel.ModelSelectionParameters,
         ModelSelectionModel.ModelSelectionModelOutput> {
@@ -174,24 +175,52 @@ public class ModelSelectionModel extends Model<ModelSelectionModel, ModelSelecti
         }
         
         private Frame generateResultFrame() {
-            int numRows = _best_r2_values.length;
+            int numRows = _best_model_predictors.length;
             String[] modelNames = new String[numRows];
             String[] predNames = new String[numRows];
             String[] modelIds = Stream.of(_best_model_ids).map(Key::toString).toArray(String[]::new);
+            String[] zvalues = new String[numRows];
+            String[] pvalues = new String[numRows];
             // generate model names and predictor names
             for (int index=0; index < numRows; index++) {
                 int numPred = index+1;
                 modelNames[index] = "best "+numPred+" predictor(s) model";
                 predNames[index] = String.join(", ", _best_model_predictors[index]);
+                zvalues[index] = joinDouble(_z_values[index]);
+                pvalues[index] = joinDouble(_coef_p_values[index]);
             }
             // generate vectors before forming frame
             Vec.VectorGroup vg = Vec.VectorGroup.VG_LEN1;
             Vec modNames = Vec.makeVec(modelNames, vg.addVec());
             Vec modelIDV = Vec.makeVec(modelIds, vg.addVec());
-            Vec r2 = Vec.makeVec(_best_r2_values, vg.addVec());
+            Vec r2=null;
+            Vec zval=null;
+            Vec pval=null;
+            if (_best_r2_values != null) {
+                r2 = Vec.makeVec(_best_r2_values, vg.addVec());
+            } else {
+                zval = Vec.makeVec(zvalues, vg.addVec());
+                pval = Vec.makeVec(pvalues, vg.addVec());
+            }
             Vec predN = Vec.makeVec(predNames, vg.addVec());
-            String[] colNames = new String[]{"model_name", "model_id", "best_r2_value", "predictor_names"};
-            return new Frame(Key.<Frame>make(), colNames, new Vec[]{modNames, modelIDV, r2, predN});
+            
+            if (r2==null) {
+                String[] colNames = new String[]{"model_name", "model_id", "best_r2_value", "predictor_names"};
+                return new Frame(Key.<Frame>make(), colNames, new Vec[]{modNames, modelIDV, r2, predN});
+            } else {
+                String[] colNames = new String[]{"model_name", "model_id", "p_values", "z_values", "predictor_names"};
+                return new Frame(Key.<Frame>make(), colNames, new Vec[]{modNames, modelIDV, pval, zval, predN});
+            }
+        }
+        
+        public void shrinkArrays(int numModelsBuilt) {
+            if (_best_model_predictors.length > numModelsBuilt) {
+                _best_model_predictors = shrinkOneArray(_best_model_predictors, numModelsBuilt);
+                _coefficient_names = shrinkOneArray(_coefficient_names, numModelsBuilt);
+                _z_values = shrinkDoubleArray(_z_values, numModelsBuilt);
+                _coef_p_values = shrinkDoubleArray(_coef_p_values, numModelsBuilt);
+                _best_model_ids = shrinkKeyArray(_best_model_ids, numModelsBuilt);
+            }
         }
         
         public void generateSummary() {
@@ -212,6 +241,25 @@ public class ModelSelectionModel extends Model<ModelSelectionModel, ModelSelecti
             }
         }
         
+        public void generateSummary(int numModels, int predNum) {
+            String[] names = new String[]{"p values", "z values", "predictor names"};
+            String[] types = new String[]{"double", "double", "string"};
+            String[] formats = new String[]{"%d", "%d", "%s"};
+            String[] rowHeaders = new String[numModels];
+            for (int index=0; index < numModels; index++) {
+                rowHeaders[index] = "with "+_best_model_predictors[index].length+" predictors";
+            }
+            _model_summary = new TwoDimTable("ModelSlection Model Summary", "summary", 
+                    rowHeaders, names, types, formats, "");
+            for (int rIndex=0; rIndex < numModels; rIndex++) {
+                int predIndex = predNum-rIndex;
+                int colInd = 0;
+                _model_summary.set(rIndex, colInd++, _coef_p_values[predIndex]);
+                _model_summary.set(rIndex, colInd++, _z_values[predIndex]);
+                _model_summary.set(rIndex, colInd++, _best_model_predictors[predIndex]);
+            }
+        }
+        
         void updateBestModels(GLMModel bestModel, int index) {
             _best_model_ids[index] = bestModel.getKey();
             if (bestModel._parms._nfolds > 0) {
@@ -225,18 +273,25 @@ public class ModelSelectionModel extends Model<ModelSelectionModel, ModelSelecti
         }
         
         void extractCoeffs(GLMModel model, int index) {
-            _coefficient_names[index] =model._output.coefficientNames().clone();
+            _coefficient_names[index] =model._output.coefficientNames().clone(); // all coefficients
             ArrayList<String> coeffNames = new ArrayList<>(Arrays.asList(model._output.coefficientNames()));
             coeffNames.remove(coeffNames.size()-1); // remove intercept as it is not a predictor
-            _best_model_predictors[index] = coeffNames.toArray(new String[0]);
+            _best_model_predictors[index] = coeffNames.toArray(new String[0]); // without intercept
         }
         
         void extractPred4NextModel(GLMModel model, int index, List<String> predNames, List<Integer> predIndices) {
             extractCoeffs(model, index);
-            String[] predictors = _best_model_predictors[index];    // z-values, p-values use this list
-            double[] z_values = model._output.zValues();
-            double[] p_values = model._output.pValues();
-            
+            _best_model_ids[index] = model.getKey();
+            List<Double> zValList = Arrays.stream(model._output.zValues()).boxed().collect(Collectors.toList());
+            zValList.remove(-1);    // remove intercept terms
+            double maxZValue = Collections.max(zValList);
+            int maxIndex = zValList.indexOf(maxZValue);
+            String maxZValPred = _best_model_predictors[index][maxIndex];
+            int predIndex = predNames.indexOf(maxZValPred);
+            predNames.remove(maxZValPred);
+            predIndices.remove(predIndices.indexOf(predIndex));
+            _z_values[index] = model._output.zValues().clone();
+            _coef_p_values[index] = model._output.pValues().clone();
         }
     }
 
@@ -245,7 +300,8 @@ public class ModelSelectionModel extends Model<ModelSelectionModel, ModelSelecti
         super.remove_impl(fs, cascade);
         if (cascade && _output._best_model_ids != null && _output._best_model_ids.length > 0) {
             for (Key oneModelID : _output._best_model_ids)
-                Keyed.remove(oneModelID, fs, cascade);   // remove model key
+                if (null != oneModelID)
+                    Keyed.remove(oneModelID, fs, cascade);   // remove model key
         }
         return fs;
     }
@@ -254,7 +310,8 @@ public class ModelSelectionModel extends Model<ModelSelectionModel, ModelSelecti
     protected AutoBuffer writeAll_impl(AutoBuffer ab) {
         if (_output._best_model_ids != null && _output._best_model_ids.length > 0) {
             for (Key oneModelID : _output._best_model_ids)
-                ab.putKey(oneModelID);  // add GLM model key
+                if (null != oneModelID)
+                    ab.putKey(oneModelID);  // add GLM model key
         }
         return super.writeAll_impl(ab);
     }
@@ -263,7 +320,8 @@ public class ModelSelectionModel extends Model<ModelSelectionModel, ModelSelecti
     protected Keyed readAll_impl(AutoBuffer ab, Futures fs) {
         if (_output._best_model_ids != null && _output._best_model_ids.length > 0) {
             for (Key oneModelID : _output._best_model_ids) {
-                ab.getKey(oneModelID, fs);  // add GLM model key
+                if (null != oneModelID)
+                    ab.getKey(oneModelID, fs);  // add GLM model key
             }
         }
         return super.readAll_impl(ab, fs);

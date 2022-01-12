@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
+import java.util.stream.DoubleStream;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
@@ -154,6 +155,7 @@ public class ModelSelection extends ModelBuilder<hex.modelselection.ModelSelecti
         public final void buildModel() {
             hex.modelselection.ModelSelectionModel model = null;
             try {
+                int numModelBuilt = 0;
                 model = new hex.modelselection.ModelSelectionModel(dest(), _parms, new hex.modelselection.ModelSelectionModel.ModelSelectionModelOutput(ModelSelection.this, _dinfo));
                 model.write_lock(_job);
                 model._output._best_model_ids = new Key[_parms._max_predictor_number];
@@ -172,11 +174,16 @@ public class ModelSelection extends ModelBuilder<hex.modelselection.ModelSelecti
                 else if (maxr.equals(_parms._mode))
                     buildMaxRModels(model);
                 else if (backward.equals(_parms._mode))
-                    buildBackwardModels(model);
+                    numModelBuilt = buildBackwardModels(model);
                 _job.update(0, "Completed GLM model building.  Extracting results now.");
                 model.update(_job);
                 // copy best R2 and best predictors to model._output
-                model._output.generateSummary();
+                if (backward.equals(_parms._mode)) {
+                    model._output.shrinkArrays(numModelBuilt);
+                    model._output.generateSummary(numModelBuilt, _numPredictors);
+                } else {
+                    model._output.generateSummary();
+                }
             } finally {
                 model.update(_job);
                 model.unlock(_job);
@@ -221,7 +228,7 @@ public class ModelSelection extends ModelBuilder<hex.modelselection.ModelSelecti
             }
         }
 
-        private void buildBackwardModels(ModelSelectionModel model) {
+        private int buildBackwardModels(ModelSelectionModel model) {
             List<String> coefNames = new ArrayList<>(Arrays.asList(_predictorNames));
             List<Integer> coefIndice = IntStream.rangeClosed(0, coefNames.size()-1).boxed().collect(Collectors.toList());
             int numModelsBuilt = 0;
@@ -234,12 +241,20 @@ public class ModelSelection extends ModelBuilder<hex.modelselection.ModelSelecti
                         _glmNFolds, _foldColumn, _foldAssignment);
                 GLMModel glmModel = new GLM(glmParam[0]).trainModel().get();
                 DKV.put(glmModel);  // track model
-                numModelsBuilt++;
+
                 // evaluate which variable to drop for next round of testing and store corresponding values
                 // if p_values_threshold is specified, model building may stop
                 model._output.extractPred4NextModel(glmModel, predNum, coefNames, coefIndice);
-                
+                numModelsBuilt++;
+                DKV.remove(trainingFrame._key);
+                _job.update(predNum, "Finished building all models with "+predNum+" predictors.");
+                if (_parms._p_values_threshold > 0) {   // check if p-values are used to stop model building
+                    if (DoubleStream.of(model._output._coef_p_values[predNum]).allMatch(x -> 
+                            x <= _parms._p_values_threshold))
+                        break;
+                }
             }
+            return numModelsBuilt;
         }
         
         /***
