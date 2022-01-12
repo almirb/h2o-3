@@ -15,11 +15,10 @@ def encofrce_utf8_encoding():
         # this reproduces the encoding error when certain codec can't encode certain character 
         h2o.H2OFrame(all_rows)
         locale.setlocale(locale.LC_ALL, orig_locale)
-    except locale.Error:
-        print("Unsupported locale setting, cannot test!")
-        print("List of supported locales: ")
-        print(locale.locale_alias)
-        raise locale.Error("Unsupported locale setting, cannot test!") 
+    except locale.Error: # in run in dev-python-3.7 there is not en_US.ISO8859-1 available, but there is POSIX which also reproduces:
+        locale.setlocale(locale.LC_ALL, 'POSIX')
+        h2o.H2OFrame(all_rows)
+        locale.setlocale(locale.LC_ALL, orig_locale)
         
     
 if __name__ == "__main__":
