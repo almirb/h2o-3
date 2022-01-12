@@ -140,10 +140,7 @@ class H2OFrame(Keyed):
 
         # create a temporary file that will be written to
         tmp_handle, tmp_path = tempfile.mkstemp(suffix=".csv")
-        if sys.version_info >= (3, 5):
-            tmp_file = os.fdopen(tmp_handle, 'w', encoding='utf-8')
-        else:
-            tmp_file = os.fdopen(tmp_handle, 'w')
+        tmp_file = os.fdopen(tmp_handle, 'w', encoding='utf-8') if sys.version_info >= (3, 5) else os.fdopen(tmp_handle, 'w')
         # create a new csv writer object thingy
         csv_writer = csv.writer(tmp_file, dialect="excel", quoting=csv.QUOTE_NONNUMERIC)
         csv_writer.writerow(column_names)
@@ -163,7 +160,7 @@ class H2OFrame(Keyed):
             raise H2OValueError("A sparse matrix expected, got %s" % type(matrix))
 
         tmp_handle, tmp_path = tempfile.mkstemp(suffix=".svmlight")
-        out = io.open(tmp_handle, "wt", encoding='utf-8')
+        out = os.fdopen(tmp_handle, 'wt', encoding='utf-8') if sys.version_info >= (3, 5) else os.fdopen(tmp_handle, 'wt')
         if destination_frame is None:
             destination_frame = _py_tmp_key(h2o.connection().session_id)
 
