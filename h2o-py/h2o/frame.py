@@ -11,7 +11,6 @@ from h2o.utils.compatibility import *  # NOQA
 import csv
 import datetime
 import functools
-import io
 from io import StringIO
 import os
 import sys
@@ -85,6 +84,7 @@ class H2OFrame(Keyed):
 
     # Temp flag: set this to false for now if encountering path conversion/expansion issues when import files to remote server
     __LOCAL_EXPANSION_ON_SINGLE_IMPORT__ = True
+    __fdopen_kwargs = {} if PY2 else {'encoding': 'utf-8'}
 
     #-------------------------------------------------------------------------------------------------------------------
     # Construction
@@ -140,7 +140,7 @@ class H2OFrame(Keyed):
 
         # create a temporary file that will be written to
         tmp_handle, tmp_path = tempfile.mkstemp(suffix=".csv")
-        tmp_file = os.fdopen(tmp_handle, 'w', encoding='utf-8') if sys.version_info >= (3, 5) else os.fdopen(tmp_handle, 'w')
+        tmp_file = os.fdopen(tmp_handle, 'w', **H2OFrame.__fdopen_kwargs)
         # create a new csv writer object thingy
         csv_writer = csv.writer(tmp_file, dialect="excel", quoting=csv.QUOTE_NONNUMERIC)
         csv_writer.writerow(column_names)
@@ -160,7 +160,7 @@ class H2OFrame(Keyed):
             raise H2OValueError("A sparse matrix expected, got %s" % type(matrix))
 
         tmp_handle, tmp_path = tempfile.mkstemp(suffix=".svmlight")
-        out = os.fdopen(tmp_handle, 'wt', encoding='utf-8') if sys.version_info >= (3, 5) else os.fdopen(tmp_handle, 'wt')
+        out = os.fdopen(tmp_handle, 'wt', **H2OFrame.__fdopen_kwargs)
         if destination_frame is None:
             destination_frame = _py_tmp_key(h2o.connection().session_id)
 
