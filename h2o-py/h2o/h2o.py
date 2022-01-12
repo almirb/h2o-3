@@ -2331,7 +2331,7 @@ def print_mojo(mojo_path, format="json", tree_index=None):
         if is_image:
             output = output_file
         else:
-            with open(output_file, "r", encoding='utf-8') as f:
+            with open(output_file, "r") as f:
                 output = f.read()
             os.unlink(output_file)
     except OSError as e:
